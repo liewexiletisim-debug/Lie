@@ -1,0 +1,37 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Zip'i aç, proje klasörünü bul
+        run: |
+          unzip -o muyekayit.zip -d src
+          APP_DIR=$(dirname "$(find src -name package.json -not -path '*/node_modules/*' | head -1)")
+          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          echo "Proje klasörü: $APP_DIR"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - run: npm install
+        working-directory: ${{ env.APP_DIR }}
+      - run: npx cap add android && npx cap sync android
+        working-directory: ${{ env.APP_DIR }}
+      - run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
+        working-directory: ${{ env.APP_DIR }}/android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: uye-kayit-apk
+          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
