@@ -5,15 +5,34 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
-      - name: Zip'i aç, proje klasörünü bul
+      - name: Zip'leri aç, projeyi bul
         run: |
-          unzip -o muyekayit.zip -d src
-          APP_DIR=$(dirname "$(find src -name package.json -not -path '*/node_modules/*' | head -1)")
-          echo "APP_DIR=$APP_DIR" >> $GITHUB_ENV
+          shopt -s nullglob
+          for z in *.zip; do
+            echo "Açılıyor: $z"
+            unzip -oq "$z" -d _src
+          done
+          CFG=$(find . -name capacitor.config.json -not -path '*/node_modules/*' | head -1)
+          if [ -z "$CFG" ]; then
+            echo "::error::capacitor.config.json bulunamadı. Depoda şunlar var:"
+            ls -la
+            exit 1
+          fi
+          APP_DIR=$(dirname "$CFG")
+          echo "APP_DIR=$APP_DIR" >> "$GITHUB_ENV"
           echo "Proje klasörü: $APP_DIR"
+          ls -la "$APP_DIR"
+
+      - name: Supabase ayarı yapılmış mı?
+        run: |
+          if grep -q "YOUR-" "$APP_DIR/www/config.js"; then
+            echo "::error::www/config.js örnek değerlerle dolu"
+            exit 1
+          fi
 
       - uses: actions/setup-node@v4
         with:
@@ -23,14 +42,21 @@ jobs:
           distribution: temurin
           java-version: 17
 
-      - run: npm install
-        working-directory: ${{ env.APP_DIR }}
-      - run: npx cap add android && npx cap sync android
-        working-directory: ${{ env.APP_DIR }}
-      - run: chmod +x gradlew && ./gradlew assembleDebug --no-daemon
-        working-directory: ${{ env.APP_DIR }}/android
+      - name: Android projesini hazırla
+        run: |
+          cd "$APP_DIR"
+          npm install
+          npx cap add android
+          npx cap sync android
+
+      - name: APK derle
+        run: |
+          cd "$APP_DIR/android"
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
 
       - uses: actions/upload-artifact@v4
         with:
           name: uye-kayit-apk
-          path: ${{ env.APP_DIR }}
+          path: ${{ env.APP_DIR }}/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
